@@ -647,25 +647,33 @@ async function downloadExcel() {
 async function shareExcel() {
   const btn = document.getElementById('btnShareExcel');
   const btnText = document.getElementById('btnShareExcelText');
-  if (btn) { btn.disabled = true; }
-  if (btnText) { btnText.textContent = 'Generando…'; }
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.textContent = 'Generando…';
+
   try {
     const data = await generateExcelBlob();
-    pendingShare = data;
-    document.getElementById('modalShareReady').showModal();
-    const shareBtn = document.getElementById('btnShareNow');
-    if (navigator.share && shareBtn) {
-      shareBtn.style.display = '';
-      shareBtn.focus();
-    } else if (shareBtn) {
-      shareBtn.style.display = 'none';
+    const file = new File([data.blob], data.fileName, { type: data.blob.type });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        files: [file],
+        title: 'Turnos TD',
+        text: data.shareText
+      });
+      showToast('Compartido con éxito', 'success');
+    } else {
+      // Fallback: Mostrar modal con opciones
+      pendingShare = data;
+      document.getElementById('modalShareReady').showModal();
     }
   } catch (err) {
-    console.error(err);
-    showToast('Error al generar el Excel.', 'error');
+    if (err.name !== 'AbortError') {
+      console.error(err);
+      showToast('Error al compartir.', 'error');
+    }
   } finally {
-    if (btn) { btn.disabled = false; }
-    if (btnText) { btnText.textContent = 'Compartir'; }
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.textContent = 'Compartir';
   }
 }
 
