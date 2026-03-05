@@ -631,18 +631,24 @@ async function exportToExcel() {
   const fileName = `Turnos_${state.currentYear}_${String(state.currentMonth).padStart(2, '0')}.xlsx`;
   const file = new File([blob], fileName, { type: blob.type });
 
-  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-    const monthLabelShare = new Date(state.currentYear, state.currentMonth - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
-    const capShare = monthLabelShare.charAt(0).toUpperCase() + monthLabelShare.slice(1);
+  const monthLabelShare = new Date(state.currentYear, state.currentMonth - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+  const capShare = monthLabelShare.charAt(0).toUpperCase() + monthLabelShare.slice(1);
+  const shareText = `Planilla de turnos - ${capShare}. Revisa el día que te toca.`;
+
+  // En móvil intentar siempre abrir el menú de compartir (WhatsApp, etc.); no depender de canShare
+  if (navigator.share) {
     try {
       await navigator.share({
         files: [file],
         title: 'Turnos TD',
-        text: `Planilla de turnos - ${capShare}. Revisa el día que te toca.`
+        text: shareText
       });
-      showToast('Planilla lista para compartir', 'success');
+      showToast('Compartido', 'success');
     } catch (e) {
-      if (e.name !== 'AbortError') {
+      if (e.name === 'AbortError') {
+        // Usuario cerró el menú sin compartir
+      } else {
+        // Fallback: descargar si share falla (ej. navegador no soporta archivos)
         doDownload(blob, fileName);
         showToast('Descargado', 'success');
       }
