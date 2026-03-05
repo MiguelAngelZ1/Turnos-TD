@@ -550,6 +550,13 @@ body {
   justify-content: flex-end;
 }
 
+.modal-buttons-stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.modal-buttons-stack .btn-block { margin-bottom: 0; }
+
 .btn-secondary {
   background: var(--bg);
   color: var(--text);

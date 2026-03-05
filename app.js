@@ -516,6 +516,8 @@ const WEEKDAY_ABBR = ['DO', 'LU', 'MA', 'MI', 'JU', 'VI', 'SA'];
 // --- Exportar/Compartir Excel (formato GCIG: matriz + resumen)
 const EXPORT_BTN_DEFAULT_TEXT = 'Compartir por WhatsApp / Descargar';
 
+let pendingShare = null; // { blob, fileName, shareText } para el modal "Planilla lista"
+
 async function exportToExcel() {
   if (typeof ExcelJS === 'undefined') {
     showToast('Error: no se pudo cargar la librería de Excel.', 'error');
@@ -629,34 +631,24 @@ async function exportToExcel() {
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const fileName = `Turnos_${state.currentYear}_${String(state.currentMonth).padStart(2, '0')}.xlsx`;
-  const file = new File([blob], fileName, { type: blob.type });
 
   const monthLabelShare = new Date(state.currentYear, state.currentMonth - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
   const capShare = monthLabelShare.charAt(0).toUpperCase() + monthLabelShare.slice(1);
   const shareText = `Planilla de turnos - ${capShare}. Revisa el día que te toca.`;
 
-  // En móvil intentar siempre abrir el menú de compartir (WhatsApp, etc.); no depender de canShare
+  // Mostrar modal "Planilla lista" con botón Compartir: el menú de compartir exige un clic reciente
+  // (después del await ya no hay "user gesture", por eso antes solo descargaba en todos los navegadores)
+  pendingShare = { blob, fileName, shareText };
+  document.getElementById('modalShareReady').showModal();
+  const shareBtn = document.getElementById('btnShareNow');
+  const downloadBtn = document.getElementById('btnDownloadFromModal');
   if (navigator.share) {
-    try {
-      await navigator.share({
-        files: [file],
-        title: 'Turnos TD',
-        text: shareText
-      });
-      showToast('Compartido', 'success');
-    } catch (e) {
-      if (e.name === 'AbortError') {
-        // Usuario cerró el menú sin compartir
-      } else {
-        // Fallback: descargar si share falla (ej. navegador no soporta archivos)
-        doDownload(blob, fileName);
-        showToast('Descargado', 'success');
-      }
-    }
+    shareBtn.style.display = '';
+    shareBtn.focus();
   } else {
-    doDownload(blob, fileName);
-    showToast('Descargado', 'success');
+    shareBtn.style.display = 'none';
   }
+  downloadBtn.style.display = '';
   } catch (err) {
     console.error(err);
     showToast('Error al generar el Excel.', 'error');
@@ -665,6 +657,43 @@ async function exportToExcel() {
     btnText.textContent = EXPORT_BTN_DEFAULT_TEXT;
   }
 }
+
+// --- Modal "Planilla lista": Compartir (con gesto de usuario) o Descargar
+function doShareFromModal() {
+  if (!pendingShare || !navigator.share) return;
+  const file = new File([pendingShare.blob], pendingShare.fileName, { type: pendingShare.blob.type });
+  navigator.share({
+    files: [file],
+    title: 'Turnos TD',
+    text: pendingShare.shareText
+  }).then(() => {
+    showToast('Compartido', 'success');
+  }).catch((e) => {
+    if (e.name !== 'AbortError') {
+      doDownload(pendingShare.blob, pendingShare.fileName);
+      showToast('Descargado', 'success');
+    }
+  });
+  pendingShare = null;
+  document.getElementById('modalShareReady').close();
+}
+
+document.getElementById('btnShareNow').addEventListener('click', doShareFromModal);
+document.getElementById('btnDownloadFromModal').addEventListener('click', () => {
+  if (pendingShare) {
+    doDownload(pendingShare.blob, pendingShare.fileName);
+    showToast('Descargado', 'success');
+    pendingShare = null;
+  }
+  document.getElementById('modalShareReady').close();
+});
+
+document.getElementById('modalShareReady').addEventListener('close', () => {
+  pendingShare = null;
+  const btn = document.getElementById('btnExportExcel');
+  const btnText = document.getElementById('btnExportExcelText');
+  if (btn && btnText) { btn.disabled = false; btnText.textContent = EXPORT_BTN_DEFAULT_TEXT; }
+});
 
 // --- Cerrar modales
 document.querySelectorAll('[data-close]').forEach(btn => {

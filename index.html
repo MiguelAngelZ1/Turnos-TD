@@ -137,6 +137,23 @@
     </div>
   </dialog>
 
+  <!-- Modal: Planilla lista → Compartir o Descargar (gesto de usuario para share) -->
+  <dialog class="modal" id="modalShareReady" aria-labelledby="modalShareReadyTitle">
+    <div class="modal-content">
+      <h3 id="modalShareReadyTitle">Planilla lista</h3>
+      <p class="modal-day">Elegí compartir (WhatsApp, etc.) o descargar el Excel.</p>
+      <div class="modal-buttons modal-buttons-stack">
+        <button type="button" class="btn-primary btn-block" id="btnShareNow">
+          Compartir
+        </button>
+        <button type="button" class="btn-secondary btn-block" id="btnDownloadFromModal">
+          Descargar
+        </button>
+        <button type="button" class="btn-secondary" data-close="modalShareReady">Cerrar</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- Modal: Agregar/Editar persona -->
   <dialog class="modal" id="modalPerson">
     <div class="modal-content">
