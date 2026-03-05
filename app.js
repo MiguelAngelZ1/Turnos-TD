@@ -514,21 +514,13 @@ function doDownload(blob, fileName) {
 const WEEKDAY_ABBR = ['DO', 'LU', 'MA', 'MI', 'JU', 'VI', 'SA'];
 
 // --- Exportar/Compartir Excel (formato GCIG: matriz + resumen)
-const EXPORT_BTN_DEFAULT_TEXT = 'Compartir por WhatsApp / Descargar';
-
 let pendingShare = null; // { blob, fileName, shareText } para el modal "Planilla lista"
 
-async function exportToExcel() {
+/** Genera el Excel del mes y devuelve { blob, fileName, shareText }. Lanza si falla. */
+async function generateExcelBlob() {
   if (typeof ExcelJS === 'undefined') {
-    showToast('Error: no se pudo cargar la librería de Excel.', 'error');
-    return;
+    throw new Error('Librería de Excel no cargada');
   }
-  const btn = document.getElementById('btnExportExcel');
-  const btnText = document.getElementById('btnExportExcelText');
-  if (!btn || !btnText) return;
-  btn.disabled = true;
-  btnText.textContent = 'Generando…';
-  try {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Turnos TD';
   const sheet = workbook.addWorksheet('Turnos del mes', { views: [{ state: 'frozen', ySplit: 3 }] });
@@ -631,30 +623,49 @@ async function exportToExcel() {
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const fileName = `Turnos_${state.currentYear}_${String(state.currentMonth).padStart(2, '0')}.xlsx`;
-
   const monthLabelShare = new Date(state.currentYear, state.currentMonth - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
   const capShare = monthLabelShare.charAt(0).toUpperCase() + monthLabelShare.slice(1);
   const shareText = `Planilla de turnos - ${capShare}. Revisa el día que te toca.`;
+  return { blob, fileName, shareText };
+}
 
-  // Mostrar modal "Planilla lista" con botón Compartir: el menú de compartir exige un clic reciente
-  // (después del await ya no hay "user gesture", por eso antes solo descargaba en todos los navegadores)
-  pendingShare = { blob, fileName, shareText };
-  document.getElementById('modalShareReady').showModal();
-  const shareBtn = document.getElementById('btnShareNow');
-  const downloadBtn = document.getElementById('btnDownloadFromModal');
-  if (navigator.share) {
-    shareBtn.style.display = '';
-    shareBtn.focus();
-  } else {
-    shareBtn.style.display = 'none';
-  }
-  downloadBtn.style.display = '';
+async function downloadExcel() {
+  const btn = document.getElementById('btnDownloadExcel');
+  if (btn) { btn.disabled = true; btn.textContent = 'Generando…'; }
+  try {
+    const { blob, fileName } = await generateExcelBlob();
+    doDownload(blob, fileName);
+    showToast('Descargado', 'success');
   } catch (err) {
     console.error(err);
     showToast('Error al generar el Excel.', 'error');
   } finally {
-    btn.disabled = false;
-    btnText.textContent = EXPORT_BTN_DEFAULT_TEXT;
+    if (btn) { btn.disabled = false; btn.textContent = 'Descargar Excel'; }
+  }
+}
+
+async function shareExcel() {
+  const btn = document.getElementById('btnShareExcel');
+  const btnText = document.getElementById('btnShareExcelText');
+  if (btn) { btn.disabled = true; }
+  if (btnText) { btnText.textContent = 'Generando…'; }
+  try {
+    const data = await generateExcelBlob();
+    pendingShare = data;
+    document.getElementById('modalShareReady').showModal();
+    const shareBtn = document.getElementById('btnShareNow');
+    if (navigator.share && shareBtn) {
+      shareBtn.style.display = '';
+      shareBtn.focus();
+    } else if (shareBtn) {
+      shareBtn.style.display = 'none';
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Error al generar el Excel.', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; }
+    if (btnText) { btnText.textContent = 'Compartir'; }
   }
 }
 
@@ -679,20 +690,13 @@ function doShareFromModal() {
 }
 
 document.getElementById('btnShareNow').addEventListener('click', doShareFromModal);
-document.getElementById('btnDownloadFromModal').addEventListener('click', () => {
-  if (pendingShare) {
-    doDownload(pendingShare.blob, pendingShare.fileName);
-    showToast('Descargado', 'success');
-    pendingShare = null;
-  }
-  document.getElementById('modalShareReady').close();
-});
 
 document.getElementById('modalShareReady').addEventListener('close', () => {
   pendingShare = null;
-  const btn = document.getElementById('btnExportExcel');
-  const btnText = document.getElementById('btnExportExcelText');
-  if (btn && btnText) { btn.disabled = false; btnText.textContent = EXPORT_BTN_DEFAULT_TEXT; }
+  const btn = document.getElementById('btnShareExcel');
+  const btnText = document.getElementById('btnShareExcelText');
+  if (btn) btn.disabled = false;
+  if (btnText) btnText.textContent = 'Compartir';
 });
 
 // --- Cerrar modales
@@ -707,7 +711,8 @@ document.getElementById('confirmAssign').addEventListener('click', confirmAssign
 document.getElementById('savePerson').addEventListener('click', savePerson);
 document.getElementById('confirmDeletePerson').addEventListener('click', confirmDeletePerson);
 document.getElementById('btnAddPerson').addEventListener('click', () => openPersonModal(null));
-document.getElementById('btnExportExcel').addEventListener('click', exportToExcel);
+document.getElementById('btnDownloadExcel').addEventListener('click', downloadExcel);
+document.getElementById('btnShareExcel').addEventListener('click', shareExcel);
 
 // Inicio
 loadState();
