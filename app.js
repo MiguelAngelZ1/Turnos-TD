@@ -510,132 +510,119 @@ function doDownload(blob, fileName) {
   a.click();
   URL.revokeObjectURL(url);
 }
-
 // Abreviaturas día de la semana (Dom=0 ... Sáb=6)
 const WEEKDAY_ABBR = ['DO', 'LU', 'MA', 'MI', 'JU', 'VI', 'SA'];
 
-// --- Exportar/Compartir Excel (formato GCIG: matriz + resumen)
-let pendingShare = null; // { blob, fileName, shareText } para el modal "Planilla lista"
-
-/** Genera el Excel del mes y devuelve { blob, fileName, shareText }. Lanza si falla. */
-async function generateExcelBlob() {
-  if (typeof ExcelJS === 'undefined') {
-    throw new Error('Librería de Excel no cargada');
-  }
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'Turnos TD';
-  const sheet = workbook.addWorksheet('Turnos del mes', { views: [{ state: 'frozen', ySplit: 3 }] });
-
-  const key = monthKey(state.currentYear, state.currentMonth);
-  const shifts = state.shifts[key] || {};
-  const totalDays = daysInMonth(state.currentYear, state.currentMonth);
-  const activePersonnel = getActivePersonnel();
-  const stats = getStatsForMonth();
-  const statsById = {};
-  stats.forEach(s => { statsById[s.id] = s.total; });
-
-  const monthLabel = new Date(state.currentYear, state.currentMonth - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
-  const monthUpper = monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1);
-  const titleText = `TURNO DE OPERADORES GCIG COMODORO RIVADAVIA ${monthUpper.toUpperCase()} DEL ${state.currentYear}`;
-
-  const borderThin = { style: 'thin' };
-  const borderThick = { style: 'medium' };
-  const weekendFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8E8E8' } };
-  const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
-  const centerAlign = { horizontal: 'center', vertical: 'middle' };
-  const bold = { bold: true };
-
-  // --- Fila 1: Título (fusionado)
-  sheet.mergeCells(1, 1, 1, totalDays + 1);
-  const titleCell = sheet.getCell(1, 1);
-  titleCell.value = titleText;
-  titleCell.font = bold;
-  titleCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-  sheet.getRow(1).height = 28;
-
-  // --- Filas 2 y 3: Encabezados de días (día de semana + número)
-  for (let day = 1; day <= totalDays; day++) {
-    const col = day + 1;
-    const dow = getDayOfWeek(state.currentYear, state.currentMonth, day);
-    const weekend = isWeekend(state.currentYear, state.currentMonth, day);
-    const dayStyle = weekend ? { fill: weekendFill, font: bold, alignment: centerAlign, border: { top: borderThin, left: borderThin, bottom: borderThin, right: borderThin } } : { font: bold, alignment: centerAlign, border: { top: borderThin, left: borderThin, bottom: borderThin, right: borderThin } };
-    sheet.getCell(2, col).value = WEEKDAY_ABBR[dow];
-    sheet.getCell(2, col).style = dayStyle;
-    sheet.getCell(3, col).value = String(day).padStart(2, '0');
-    sheet.getCell(3, col).style = dayStyle;
-  }
-  sheet.getCell(2, 1).value = 'Grado Apellido y Nombre';
-  sheet.getCell(2, 1).style = { font: bold, alignment: { horizontal: 'center', vertical: 'middle' }, border: { top: borderThin, left: borderThick, bottom: borderThin, right: borderThin }, fill: headerFill };
-  sheet.getCell(3, 1).value = '';
-  sheet.getCell(3, 1).style = { border: { top: borderThin, left: borderThick, bottom: borderThin, right: borderThin }, fill: headerFill };
-  sheet.getRow(2).height = 20;
-  sheet.getRow(3).height = 20;
-
-  // --- Filas de operadores: una fila por persona, "T" en el día asignado
-  activePersonnel.forEach((person, idx) => {
-    const rowNum = 4 + idx;
-    sheet.getCell(rowNum, 1).value = person.name.toUpperCase();
-    sheet.getCell(rowNum, 1).style = { font: bold, border: { top: borderThin, left: borderThick, bottom: borderThin, right: borderThin } };
-    for (let day = 1; day <= totalDays; day++) {
-      const col = day + 1;
-      const hasShift = shifts[String(day)] === person.id;
-      const weekend = isWeekend(state.currentYear, state.currentMonth, day);
-      const cell = sheet.getCell(rowNum, col);
-      cell.value = hasShift ? 'T' : '';
-      cell.alignment = centerAlign;
-      cell.border = { top: borderThin, left: borderThin, bottom: borderThin, right: borderThin };
-      if (weekend) cell.fill = weekendFill;
-    }
-  });
-
-  // Borde exterior de la tabla principal (derecha e inferior)
-  for (let r = 2; r <= 3 + activePersonnel.length; r++) {
-    sheet.getCell(r, totalDays + 1).border = { ...sheet.getCell(r, totalDays + 1).border, right: borderThick };
-  }
-  for (let c = 1; c <= totalDays + 1; c++) {
-    const lastRow = 3 + activePersonnel.length;
-    sheet.getCell(lastRow, c).border = { ...sheet.getCell(lastRow, c).border, bottom: borderThick };
-  }
-
-  // --- Tabla de resumen: OPERADORES | T (total turnos)
-  const summaryStartRow = 5 + activePersonnel.length;
-  sheet.getCell(summaryStartRow, 1).value = 'OPERADORES';
-  sheet.getCell(summaryStartRow, 1).style = { font: bold, border: { top: borderThick, left: borderThick, bottom: borderThin, right: borderThin }, fill: headerFill };
-  sheet.getCell(summaryStartRow, 2).value = 'T';
-  sheet.getCell(summaryStartRow, 2).style = { font: bold, alignment: centerAlign, border: { top: borderThick, left: borderThin, bottom: borderThin, right: borderThick }, fill: headerFill };
-  sheet.getRow(summaryStartRow).height = 20;
-
-  activePersonnel.forEach((person, idx) => {
-    const r = summaryStartRow + 1 + idx;
-    const total = statsById[person.id] || 0;
-    sheet.getCell(r, 1).value = person.name.toUpperCase();
-    sheet.getCell(r, 1).style = { border: { top: borderThin, left: borderThick, bottom: borderThin, right: borderThin } };
-    sheet.getCell(r, 2).value = total > 0 ? total : '';
-    sheet.getCell(r, 2).style = { alignment: centerAlign, border: { top: borderThin, left: borderThin, bottom: borderThin, right: borderThick } };
-  });
-  const lastSummaryRow = summaryStartRow + activePersonnel.length;
-  sheet.getCell(lastSummaryRow, 1).border = { ...sheet.getCell(lastSummaryRow, 1).border, bottom: borderThick };
-  sheet.getCell(lastSummaryRow, 2).border = { ...sheet.getCell(lastSummaryRow, 2).border, bottom: borderThick };
-
-  // Anchos de columna
-  sheet.getColumn(1).width = 28;
-  for (let d = 1; d <= totalDays; d++) sheet.getColumn(d + 1).width = 5;
-
-  const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const fileName = `Turnos_${state.currentYear}_${String(state.currentMonth).padStart(2, '0')}.xlsx`;
-  const monthLabelShare = new Date(state.currentYear, state.currentMonth - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
-  const capShare = monthLabelShare.charAt(0).toUpperCase() + monthLabelShare.slice(1);
-  const shareText = `Planilla de turnos - ${capShare}. Revisa el día que te toca.`;
-  return { blob, fileName, shareText };
-}
-
+// --- Exportar Excel (formato GCIG: matriz + resumen)
 async function downloadExcel() {
   const btn = document.getElementById('btnDownloadExcel');
   if (btn) { btn.disabled = true; btn.textContent = 'Generando…'; }
+
   try {
-    const { blob, fileName } = await generateExcelBlob();
-    doDownload(blob, fileName);
+    if (typeof ExcelJS === 'undefined') throw new Error('ExcelJS no cargada');
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Turnos TD';
+    const sheet = workbook.addWorksheet('Turnos del mes', { views: [{ state: 'frozen', ySplit: 3 }] });
+
+    const key = monthKey(state.currentYear, state.currentMonth);
+    const shifts = state.shifts[key] || {};
+    const totalDays = daysInMonth(state.currentYear, state.currentMonth);
+    const activePersonnel = getActivePersonnel();
+    const stats = getStatsForMonth();
+    const statsById = {};
+    stats.forEach(s => { statsById[s.id] = s.total; });
+
+    const monthLabel = new Date(state.currentYear, state.currentMonth - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+    const titleText = `TURNO DE OPERADORES GCIG COMODORO RIVADAVIA ${monthLabel.toUpperCase()} DEL ${state.currentYear}`;
+
+    const borderThin = { style: 'thin' };
+    const borderThick = { style: 'medium' };
+    const weekendFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8E8E8' } };
+    const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+    const centerAlign = { horizontal: 'center', vertical: 'middle' };
+    const bold = { bold: true };
+
+    sheet.mergeCells(1, 1, 1, totalDays + 1);
+    const titleCell = sheet.getCell(1, 1);
+    titleCell.value = titleText;
+    titleCell.font = bold;
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    sheet.getRow(1).height = 28;
+
+    for (let day = 1; day <= totalDays; day++) {
+      const col = day + 1;
+      const dow = getDayOfWeek(state.currentYear, state.currentMonth, day);
+      const weekend = isWeekend(state.currentYear, state.currentMonth, day);
+      const style = { font: bold, alignment: centerAlign, border: { top: borderThin, left: borderThin, bottom: borderThin, right: borderThin } };
+      if (weekend) style.fill = weekendFill;
+      sheet.getCell(2, col).value = WEEKDAY_ABBR[dow];
+      sheet.getCell(2, col).style = style;
+      sheet.getCell(3, col).value = String(day).padStart(2, '0');
+      sheet.getCell(3, col).style = style;
+    }
+
+    sheet.getCell(2, 1).value = 'Grado Apellido y Nombre';
+    sheet.getCell(2, 1).style = { font: bold, alignment: centerAlign, border: { top: borderThin, left: borderThick, bottom: borderThin, right: borderThin }, fill: headerFill };
+    sheet.getCell(3, 1).value = '';
+    sheet.getCell(3, 1).style = { border: { top: borderThin, left: borderThick, bottom: borderThin, right: borderThin }, fill: headerFill };
+    sheet.getRow(2).height = 20;
+    sheet.getRow(3).height = 20;
+
+    activePersonnel.forEach((person, idx) => {
+      const rowNum = 4 + idx;
+      sheet.getCell(rowNum, 1).value = person.name.toUpperCase();
+      sheet.getCell(rowNum, 1).style = { font: bold, border: { top: borderThin, left: borderThick, bottom: borderThin, right: borderThin } };
+      for (let day = 1; day <= totalDays; day++) {
+        const col = day + 1;
+        const cell = sheet.getCell(rowNum, col);
+        cell.value = (shifts[String(day)] === person.id) ? 'T' : '';
+        cell.alignment = centerAlign;
+        cell.border = { top: borderThin, left: borderThin, bottom: borderThin, right: borderThin };
+        if (isWeekend(state.currentYear, state.currentMonth, day)) cell.fill = weekendFill;
+      }
+    });
+
+    // Borde exterior de la tabla principal (derecha e inferior)
+    for (let r = 2; r <= 3 + activePersonnel.length; r++) {
+      sheet.getCell(r, totalDays + 1).border = { ...sheet.getCell(r, totalDays + 1).border, right: borderThick };
+    }
+    for (let c = 1; c <= totalDays + 1; c++) {
+      const lastRow = 3 + activePersonnel.length;
+      sheet.getCell(lastRow, c).border = { ...sheet.getCell(lastRow, c).border, bottom: borderThick };
+    }
+
+    const summaryStart = 5 + activePersonnel.length;
+    sheet.getCell(summaryStart, 1).value = 'OPERADORES';
+    sheet.getCell(summaryStart, 1).style = { font: bold, border: { top: borderThick, left: borderThick, bottom: borderThin, right: borderThin }, fill: headerFill };
+    sheet.getCell(summaryStart, 2).value = 'T';
+    sheet.getCell(summaryStart, 2).style = { font: bold, alignment: centerAlign, border: { top: borderThick, left: borderThin, bottom: borderThin, right: borderThick }, fill: headerFill };
+    sheet.getRow(summaryStart).height = 20;
+
+    activePersonnel.forEach((person, idx) => {
+      const r = summaryStart + 1 + idx;
+      sheet.getCell(r, 1).value = person.name.toUpperCase();
+      sheet.getCell(r, 1).style = { border: { top: borderThin, left: borderThick, bottom: borderThin, right: borderThin } };
+      sheet.getCell(r, 2).value = statsById[person.id] || '';
+      sheet.getCell(r, 2).style = { alignment: centerAlign, border: { top: borderThin, left: borderThin, bottom: borderThin, right: borderThick } };
+    });
+    const lastSummaryRow = summaryStart + activePersonnel.length;
+    sheet.getCell(lastSummaryRow, 1).border = { ...sheet.getCell(lastSummaryRow, 1).border, bottom: borderThick };
+    sheet.getCell(lastSummaryRow, 2).border = { ...sheet.getCell(lastSummaryRow, 2).border, bottom: borderThick };
+
+    sheet.getColumn(1).width = 28;
+    for (let d = 1; d <= totalDays; d++) sheet.getColumn(d + 1).width = 5;
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const fileName = `Turnos_${state.currentYear}_${String(state.currentMonth).padStart(2, '0')}.xlsx`;
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
     showToast('Descargado', 'success');
   } catch (err) {
     console.error(err);
@@ -644,67 +631,6 @@ async function downloadExcel() {
     if (btn) { btn.disabled = false; btn.textContent = 'Descargar Excel'; }
   }
 }
-
-async function shareExcel() {
-  const btn = document.getElementById('btnShareExcel');
-  const btnText = document.getElementById('btnShareExcelText');
-  if (btn) btn.disabled = true;
-  if (btnText) btnText.textContent = 'Generando…';
-
-  try {
-    // Generar el blob primero. Esto puede tardar un poco y rompería el "User Gesture"
-    // si intentamos llamar a navigator.share directamente después.
-    const data = await generateExcelBlob();
-    pendingShare = data;
-
-    // Mostramos el modal de "Planilla lista". 
-    // El usuario tocará "Compartir" en el modal, lo que disparará un gesto fresco y válido.
-    document.getElementById('modalShareReady').showModal();
-  } catch (err) {
-    console.error(err);
-    showToast('Error al generar el Excel.', 'error');
-  } finally {
-    if (btn) btn.disabled = false;
-    if (btnText) btnText.textContent = 'Compartir';
-  }
-}
-
-// --- Modal "Planilla lista": Compartir (con gesto de usuario) o Descargar
-function doShareFromModal() {
-  if (!pendingShare) return;
-  const data = pendingShare; // Referencia local para evitar race conditions
-  pendingShare = null; // Lo limpiamos inmediatamente en el estado global
-  document.getElementById('modalShareReady').close();
-
-  if (!navigator.share) {
-    doDownload(data.blob, data.fileName);
-    return;
-  }
-
-  const file = new File([data.blob], data.fileName, { type: data.blob.type });
-  navigator.share({
-    files: [file],
-    title: 'Turnos TD',
-    text: data.shareText
-  }).then(() => {
-    showToast('Compartido', 'success');
-  }).catch((e) => {
-    if (e.name !== 'AbortError') {
-      console.error('Share failed, falling back to download:', e);
-      doDownload(data.blob, data.fileName);
-    }
-  });
-}
-
-document.getElementById('btnShareNow').addEventListener('click', doShareFromModal);
-
-document.getElementById('modalShareReady').addEventListener('close', () => {
-  pendingShare = null;
-  const btn = document.getElementById('btnShareExcel');
-  const btnText = document.getElementById('btnShareExcelText');
-  if (btn) btn.disabled = false;
-  if (btnText) btnText.textContent = 'Compartir';
-});
 
 // --- Cerrar modales
 document.querySelectorAll('[data-close]').forEach(btn => {
