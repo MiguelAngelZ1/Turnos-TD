@@ -671,22 +671,29 @@ async function shareExcel() {
 
 // --- Modal "Planilla lista": Compartir (con gesto de usuario) o Descargar
 function doShareFromModal() {
-  if (!pendingShare || !navigator.share) return;
-  const file = new File([pendingShare.blob], pendingShare.fileName, { type: pendingShare.blob.type });
+  if (!pendingShare) return;
+  const data = pendingShare; // Referencia local para evitar race conditions
+  pendingShare = null; // Lo limpiamos inmediatamente en el estado global
+  document.getElementById('modalShareReady').close();
+
+  if (!navigator.share) {
+    doDownload(data.blob, data.fileName);
+    return;
+  }
+
+  const file = new File([data.blob], data.fileName, { type: data.blob.type });
   navigator.share({
     files: [file],
     title: 'Turnos TD',
-    text: pendingShare.shareText
+    text: data.shareText
   }).then(() => {
     showToast('Compartido', 'success');
   }).catch((e) => {
     if (e.name !== 'AbortError') {
-      doDownload(pendingShare.blob, pendingShare.fileName);
-      showToast('Descargado', 'success');
+      console.error('Share failed, falling back to download:', e);
+      doDownload(data.blob, data.fileName);
     }
   });
-  pendingShare = null;
-  document.getElementById('modalShareReady').close();
 }
 
 document.getElementById('btnShareNow').addEventListener('click', doShareFromModal);
