@@ -651,26 +651,17 @@ async function shareExcel() {
   if (btnText) btnText.textContent = 'Generando…';
 
   try {
+    // Generar el blob primero. Esto puede tardar un poco y rompería el "User Gesture"
+    // si intentamos llamar a navigator.share directamente después.
     const data = await generateExcelBlob();
-    const file = new File([data.blob], data.fileName, { type: data.blob.type });
+    pendingShare = data;
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({
-        files: [file],
-        title: 'Turnos TD',
-        text: data.shareText
-      });
-      showToast('Compartido con éxito', 'success');
-    } else {
-      // Fallback: Mostrar modal con opciones
-      pendingShare = data;
-      document.getElementById('modalShareReady').showModal();
-    }
+    // Mostramos el modal de "Planilla lista". 
+    // El usuario tocará "Compartir" en el modal, lo que disparará un gesto fresco y válido.
+    document.getElementById('modalShareReady').showModal();
   } catch (err) {
-    if (err.name !== 'AbortError') {
-      console.error(err);
-      showToast('Error al compartir.', 'error');
-    }
+    console.error(err);
+    showToast('Error al generar el Excel.', 'error');
   } finally {
     if (btn) btn.disabled = false;
     if (btnText) btnText.textContent = 'Compartir';
