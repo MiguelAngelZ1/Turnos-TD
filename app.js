@@ -1,3 +1,4 @@
+console.log('--- Turnos TD v1.2 (Commit: Glass+Bugfix) ---');
 /**
  * Turnos TD - App de administración de turnos
  * Regla: turno viernes = mismo turno sábado y domingo
