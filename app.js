@@ -645,7 +645,6 @@ document.getElementById('savePerson').addEventListener('click', savePerson);
 document.getElementById('confirmDeletePerson').addEventListener('click', confirmDeletePerson);
 document.getElementById('btnAddPerson').addEventListener('click', () => openPersonModal(null));
 document.getElementById('btnDownloadExcel').addEventListener('click', downloadExcel);
-document.getElementById('btnShareExcel').addEventListener('click', shareExcel);
 
 // Inicio
 loadState();
